@@ -156,23 +156,39 @@ app.get('/notify/:id', authenticate, async (req: AuthRequest, res) => {
 });
 
 /**
+ * Socket.io authentication middleware.
+ * Validates JWT from connection handshake and auto-joins user room.
+ */
+io.use((socket, next) => {
+    const token = socket.handshake.auth.token;
+    if (!token) return next(new Error("No token provided"));
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET!) as { id: string };
+        (socket as any).userId = decoded.id;
+        next();
+    } catch {
+        next(new Error("Invalid token"));
+    }
+});
+
+/**
  * Socket.io connection handler.
- * - 'join': client joins a user-specific room for targeted notifications.
+ * - Auto-joins user room from JWT on connection.
  * - 'notify': broadcasts data to all connected clients.
  * - 'disconnect': logs when a client disconnects.
  */
 io.on('connection', (socket) => {
-    console.log('New Connection established', socket.id);
-    socket.on('join', (userId: string) => {
-        socket.join(`user:${userId}`);
-        console.log(`Socket ${socket.id} joined room user:${userId}`);
-    });
+    const userId = (socket as any).userId;
+    socket.join(`user:${userId}`);
+    console.log(`Socket ${socket.id} joined room user:${userId}`);
+
     socket.on('notify', (data) => {
         console.log('notify event emitted');
         io.emit('notify', data);
     });
+
     socket.on("disconnect", () => {
-        console.log("Socket disconnected");
+        console.log(`Socket ${socket.id} disconnected`);
     });
 });
 
